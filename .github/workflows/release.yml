@@ -84,7 +84,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # macOS signing — only active on mac runner
           CSC_KEYCHAIN: ${{ matrix.platform == 'mac' && format('{0}/cabletv.keychain-db', runner.temp) || '' }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          # Notarization
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
         run: npx electron-builder --${{ matrix.platform }} --publish always

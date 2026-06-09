@@ -32,7 +32,7 @@
     "wait-on": "^8.0.3"
   },
   "build": {
-    "appId": "com.cabletv.app",
+    "appId": "com.jonybur.cabletv",
     "productName": "Cable TV",
     "mac": {
       "category": "public.app-category.entertainment",
