@@ -1,0 +1,8 @@
+dist/linux-unpacked
+dist/*.AppImage
+dist/*.snap
+dist/*.deb
+dist/*.rpm
+dist-electron
+node_modules
+electron

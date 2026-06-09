@@ -18,6 +18,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@electron/notarize": "^3.1.1",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",
@@ -43,7 +44,10 @@
             "arm64"
           ]
         }
-      ]
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
       "target": [
@@ -71,6 +75,7 @@
       "owner": "jonybur-oc",
       "repo": "cabletv",
       "releaseType": "release"
-    }
+    },
+    "afterSign": "scripts/notarize.js"
   }
 }

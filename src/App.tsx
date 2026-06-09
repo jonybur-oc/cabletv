@@ -302,19 +302,19 @@ function WebMode({ channel, content, offsetSeconds, deepLink, channels, channelI
             </p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
               <a
-                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable.TV-mac-x64.dmg"
+                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable-TV-0.1.0.dmg"
                 style={downloadBtnStyle}
               >
                 ⬇ macOS (Intel)
               </a>
               <a
-                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable.TV-mac-arm64.dmg"
+                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable-TV-0.1.0-arm64.dmg"
                 style={downloadBtnStyle}
               >
                 ⬇ macOS (Apple Silicon)
               </a>
               <a
-                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable.TV-win-x64.exe"
+                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable-TV-0.1.0.exe"
                 style={downloadBtnStyle}
               >
                 ⬇ Windows
