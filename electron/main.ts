@@ -1,10 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 const isDev = process.env.NODE_ENV === 'development';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 
