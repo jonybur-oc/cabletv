@@ -58,18 +58,19 @@ jobs:
       - name: Compile Electron main
         run: npm run electron:compile
 
-      # macOS: import signing certificate
-      - name: Import macOS certificate
+      # macOS: import signing certificate + write notarization key file
+      - name: Import macOS certificate and setup notarization
         if: matrix.platform == 'mac'
         env:
           MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
+          # Import signing certificate
           KEYCHAIN_PATH=$RUNNER_TEMP/cabletv.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 20)
-
           echo "$MAC_CERT_P12" | base64 --decode > $RUNNER_TEMP/cert.p12
-
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
@@ -80,14 +81,26 @@ jobs:
             -T /usr/bin/security
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+          # Write .p8 key to file (notarytool requires a file path)
+          mkdir -p ~/private_keys
+          echo "$APPLE_API_KEY_CONTENT" > ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
+          chmod 600 ~/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8
+
       - name: Build & publish Electron app
+        if: matrix.platform == 'mac'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_KEYCHAIN: ${{ matrix.platform == 'mac' && format('{0}/cabletv.keychain-db', runner.temp) || '' }}
+          CSC_KEYCHAIN: ${{ runner.temp }}/cabletv.keychain-db
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          # Notarization
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          # Point electron-builder notarization to the key file
+          APPLE_API_KEY: ~/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-        run: npx electron-builder --${{ matrix.platform }} --publish always
+        run: npx electron-builder --mac --publish always
+
+      - name: Build & publish Electron app (Windows)
+        if: matrix.platform == 'win'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish always
