@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { CHANNELS } from './channels';
 import { getNowPlaying, formatOffset } from './scheduler';
+import { UpdateBanner } from './UpdateBanner';
 import type { NowPlaying } from './scheduler';
 
 // Electron injects this
@@ -130,6 +131,8 @@ export default function App() {
         />
       )}
 
+      <UpdateBanner />
+
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
         @keyframes fadeIn { from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)} }
@@ -239,6 +242,19 @@ function TVGuide({ channels, currentIndex, onSelect, onClose }: {
 
 // ── Web mode (non-Electron) ───────────────────────────────────────────────────
 
+const downloadBtnStyle: React.CSSProperties = {
+  padding: '8px 16px',
+  background: '#1a1a1a',
+  color: '#ccc',
+  border: '1px solid #333',
+  borderRadius: '8px',
+  textDecoration: 'none',
+  fontSize: '13px',
+  fontWeight: 600,
+  cursor: 'pointer',
+  transition: 'border-color 0.15s',
+};
+
 function WebMode({ channel, content, offsetSeconds, deepLink, channels, channelIndex, onSelect, onPrev, onNext }: any) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -280,9 +296,34 @@ function WebMode({ channel, content, offsetSeconds, deepLink, channels, channelI
             Open in {channel.service === 'netflix' ? 'Netflix' : 'HBO Max'} →
           </a>
 
-          <p style={{ color: '#333', fontSize: '12px', marginTop: '12px' }}>
-            Download the desktop app for the full inline experience
-          </p>
+          <div style={{ marginTop: '24px', padding: '20px', background: '#111', borderRadius: '12px', border: '1px solid #1a1a1a' }}>
+            <p style={{ color: '#888', fontSize: '13px', margin: '0 0 14px' }}>
+              Download the desktop app for the full inline experience
+            </p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <a
+                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable.TV-mac-x64.dmg"
+                style={downloadBtnStyle}
+              >
+                ⬇ macOS (Intel)
+              </a>
+              <a
+                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable.TV-mac-arm64.dmg"
+                style={downloadBtnStyle}
+              >
+                ⬇ macOS (Apple Silicon)
+              </a>
+              <a
+                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable.TV-win-x64.exe"
+                style={downloadBtnStyle}
+              >
+                ⬇ Windows
+              </a>
+            </div>
+            <p style={{ color: '#333', fontSize: '11px', margin: '12px 0 0', textAlign: 'center' }}>
+              Auto-updates automatically when new versions are released
+            </p>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: '24px', color: '#333', fontSize: '13px' }}>
