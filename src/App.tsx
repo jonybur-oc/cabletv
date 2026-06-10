@@ -1,10 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { CHANNELS } from './channels';
-import { getNowPlaying, formatOffset } from './scheduler';
 import { UpdateBanner } from './UpdateBanner';
-import type { NowPlaying } from './scheduler';
 
-// Electron injects this
 declare global {
   interface Window {
     electronAPI?: { isElectron: boolean };
@@ -13,101 +10,136 @@ declare global {
 
 const isElectron = !!window.electronAPI?.isElectron;
 
+// Each channel maps to a streaming service home page
+// The user is logged into their own account — the service decides what plays
+const CHANNEL_URLS: Record<string, string> = {
+  'hbo-fantasy':    'https://play.max.com/browse/genre/fantasy',
+  'netflix-crime':  'https://www.netflix.com/browse/genre/6396',
+  'hbo-war':        'https://play.max.com/browse/genre/war',
+  'netflix-scifi':  'https://www.netflix.com/browse/genre/1492',
+};
+
 export default function App() {
   const [channelIndex, setChannelIndex] = useState(0);
-  const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null);
-  const [tick, setTick] = useState(0);
   const [showGuide, setShowGuide] = useState(false);
-  const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const [hudVisible, setHudVisible] = useState(true);
+  const webviewRefs = useRef<Record<string, Electron.WebviewTag | null>>({});
+  const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const channel = CHANNELS[channelIndex];
+
+  const showHud = () => {
+    setHudVisible(true);
+    if (hudTimer.current) clearTimeout(hudTimer.current);
+    hudTimer.current = setTimeout(() => setHudVisible(false), 4000);
+  };
 
   useEffect(() => {
-    const interval = setInterval(() => setTick(t => t + 1), 30000);
-    return () => clearInterval(interval);
-  }, []);
+    showHud();
+  }, [channelIndex]);
 
-  useEffect(() => {
-    const channel = CHANNELS[channelIndex];
-    const np = getNowPlaying(channel);
-    setNowPlaying(np);
-
-    // In Electron, navigate the webview to the content at the right timestamp
-    if (isElectron && webviewRef.current) {
-      webviewRef.current.src = np.deepLink;
-    }
-  }, [channelIndex, tick]);
-
-  const prevChannel = () =>
-    setChannelIndex(i => (i - 1 + CHANNELS.length) % CHANNELS.length);
-  const nextChannel = () =>
-    setChannelIndex(i => (i + 1) % CHANNELS.length);
+  const prevChannel = () => setChannelIndex(i => (i - 1 + CHANNELS.length) % CHANNELS.length);
+  const nextChannel = () => setChannelIndex(i => (i + 1) % CHANNELS.length);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') nextChannel();
-      if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') prevChannel();
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { nextChannel(); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { prevChannel(); }
       if (e.key === 'g' || e.key === 'G') setShowGuide(g => !g);
+      if (e.key === 'Escape') setShowGuide(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (!nowPlaying) return null;
-  const { channel, content, offsetSeconds, deepLink } = nowPlaying;
-
   return (
-    <div style={{
-      width: '100vw',
-      height: '100vh',
-      background: '#0a0a0a',
-      color: '#fff',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
-      {isElectron ? (
-        // ELECTRON MODE: embedded webview fills the screen
-        <div style={{ flex: 1, position: 'relative' }}>
-          {/* @ts-ignore — webview is an Electron-specific element */}
-          <webview
-            ref={webviewRef}
-            src={deepLink}
-            style={{ width: '100%', height: '100%', border: 'none' }}
-            allowpopups="true"
-            useragent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-          />
+    <div style={{ width: '100vw', height: '100vh', background: '#0a0a0a', overflow: 'hidden', position: 'relative' }}>
 
-          {/* Overlay HUD — shows briefly then fades */}
-          <ChannelHUD
-            channel={channel}
-            content={content}
-            offsetSeconds={offsetSeconds}
-            channelNumber={channelIndex + 1}
-          />
+      {isElectron ? (
+        // ELECTRON: one webview per channel, only active one is visible
+        <>
+          {CHANNELS.map((ch, i) => (
+            <div
+              key={ch.id}
+              style={{
+                position: 'absolute', inset: 0,
+                display: i === channelIndex ? 'block' : 'none',
+              }}
+            >
+              {/* @ts-ignore */}
+              <webview
+                ref={(el: Electron.WebviewTag | null) => { webviewRefs.current[ch.id] = el; }}
+                src={CHANNEL_URLS[ch.id] || 'about:blank'}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                allowpopups="true"
+                useragent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+              />
+            </div>
+          ))}
+
+          {/* Channel HUD */}
+          {hudVisible && (
+            <div style={{
+              position: 'absolute', bottom: '48px', left: '24px',
+              background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)',
+              borderRadius: '12px', padding: '14px 18px',
+              borderLeft: `3px solid ${channel.color}`,
+              animation: 'fadeIn 0.25s ease',
+              pointerEvents: 'none',
+            }}>
+              <div style={{ fontSize: '11px', color: channel.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' }}>
+                CH {channelIndex + 1} · {channel.name}
+              </div>
+              <div style={{ fontSize: '13px', color: '#aaa' }}>{channel.genre}</div>
+            </div>
+          )}
 
           {/* TV Guide overlay */}
           {showGuide && (
-            <TVGuide
-              channels={CHANNELS}
-              currentIndex={channelIndex}
-              onSelect={setChannelIndex}
-              onClose={() => setShowGuide(false)}
-            />
+            <div
+              style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', flexDirection: 'column', padding: '32px', animation: 'fadeIn 0.2s ease' }}
+              onClick={() => setShowGuide(false)}
+            >
+              <div style={{ fontFamily: 'system-ui', fontSize: '12px', color: '#555', marginBottom: '20px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#666' }}>
+                TV Guide · Press G or Esc to close
+              </div>
+              {CHANNELS.map((ch, i) => (
+                <div
+                  key={ch.id}
+                  onClick={e => { e.stopPropagation(); setChannelIndex(i); setShowGuide(false); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '16px',
+                    padding: '14px 18px', borderRadius: '8px', marginBottom: '8px',
+                    background: i === channelIndex ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)',
+                    border: `1px solid ${i === channelIndex ? ch.color : 'transparent'}`,
+                    cursor: 'pointer',
+                    fontFamily: 'system-ui',
+                  }}
+                >
+                  <div style={{ width: '3px', height: '36px', background: ch.color, borderRadius: '2px', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: '11px', color: ch.color, fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>CH {i + 1}</div>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#fff' }}>{ch.name}</div>
+                    <div style={{ fontSize: '12px', color: '#555' }}>{ch.service === 'netflix' ? 'Netflix' : 'HBO Max'} · {ch.genre}</div>
+                  </div>
+                  {i === channelIndex && (
+                    <div style={{ marginLeft: 'auto', fontSize: '11px', color: '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s infinite' }} />
+                      NOW
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
 
           {/* Bottom bar */}
           <div style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
+            position: 'absolute', bottom: 0, left: 0, right: 0,
             padding: '8px 16px',
-            background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px',
-            fontSize: '12px',
-            color: '#666',
+            background: 'linear-gradient(transparent, rgba(0,0,0,0.7))',
+            display: 'flex', alignItems: 'center', gap: '12px',
+            fontFamily: 'system-ui', fontSize: '12px', color: '#444',
           }}>
             <span>← → to flip</span>
             <span>·</span>
@@ -115,240 +147,55 @@ export default function App() {
             <div style={{ flex: 1 }} />
             <span style={{ color: channel.color, fontWeight: 700 }}>{channel.name}</span>
           </div>
-        </div>
+        </>
       ) : (
-        // WEB MODE: show info + deep link
-        <WebMode
-          channel={channel}
-          content={content}
-          offsetSeconds={offsetSeconds}
-          deepLink={deepLink}
-          channels={CHANNELS}
-          channelIndex={channelIndex}
-          onSelect={setChannelIndex}
-          onPrev={prevChannel}
-          onNext={nextChannel}
-        />
+        // WEB: show channel grid with links
+        <WebMode channels={CHANNELS} channelIndex={channelIndex} onSelect={setChannelIndex} onPrev={prevChannel} onNext={nextChannel} channelUrls={CHANNEL_URLS} />
       )}
 
       <UpdateBanner />
 
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)} }
+        @keyframes fadeIn { from{opacity:0}to{opacity:1} }
         * { box-sizing: border-box; }
-        body { margin: 0; }
+        body { margin: 0; color: #fff; font-family: system-ui; }
       `}</style>
     </div>
   );
 }
 
-// ── Channel HUD (Electron only) ───────────────────────────────────────────────
-
-function ChannelHUD({ channel, content, offsetSeconds, channelNumber }: {
-  channel: any; content: any; offsetSeconds: number; channelNumber: number;
-}) {
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
-    setVisible(true);
-    const t = setTimeout(() => setVisible(false), 4000);
-    return () => clearTimeout(t);
-  }, [channel.id, content.id]);
-
-  if (!visible) return null;
-
+function WebMode({ channels, channelIndex, onSelect, onPrev, onNext, channelUrls }: any) {
+  const ch = channels[channelIndex];
   return (
-    <div style={{
-      position: 'absolute',
-      bottom: '48px',
-      left: '24px',
-      background: 'rgba(0,0,0,0.85)',
-      backdropFilter: 'blur(12px)',
-      borderRadius: '12px',
-      padding: '16px 20px',
-      borderLeft: `3px solid ${channel.color}`,
-      animation: 'fadeIn 0.3s ease',
-      maxWidth: '340px',
-    }}>
-      <div style={{ fontSize: '11px', color: channel.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' }}>
-        CH {channelNumber} · {channel.name}
-      </div>
-      <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '2px' }}>{content.title}</div>
-      <div style={{ fontSize: '13px', color: '#888' }}>{formatOffset(offsetSeconds)}</div>
-    </div>
-  );
-}
-
-// ── TV Guide overlay ──────────────────────────────────────────────────────────
-
-function TVGuide({ channels, currentIndex, onSelect, onClose }: {
-  channels: any[]; currentIndex: number; onSelect: (i: number) => void; onClose: () => void;
-}) {
-  return (
-    <div style={{
-      position: 'absolute',
-      inset: 0,
-      background: 'rgba(0,0,0,0.9)',
-      display: 'flex',
-      flexDirection: 'column',
-      padding: '32px',
-      animation: 'fadeIn 0.2s ease',
-    }}
-      onClick={onClose}
-    >
-      <div style={{ fontSize: '13px', color: '#666', marginBottom: '24px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-        TV Guide · Press G to close
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {channels.map((ch, i) => {
-          const np = getNowPlaying(ch);
-          return (
-            <div
-              key={ch.id}
-              onClick={e => { e.stopPropagation(); onSelect(i); onClose(); }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '16px',
-                padding: '16px 20px',
-                borderRadius: '10px',
-                background: i === currentIndex ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${i === currentIndex ? ch.color : 'transparent'}`,
-                cursor: 'pointer',
-              }}
-            >
-              <div style={{ width: '3px', height: '40px', background: ch.color, borderRadius: '2px', flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '11px', color: ch.color, fontWeight: 700, textTransform: 'uppercase', marginBottom: '2px' }}>
-                  CH {i + 1} · {ch.name}
-                </div>
-                <div style={{ fontSize: '16px', fontWeight: 600 }}>{np.content.title}</div>
-                <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>{formatOffset(np.offsetSeconds)}</div>
-              </div>
-              {i === currentIndex && (
-                <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s infinite' }} />
-                  NOW
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Web mode (non-Electron) ───────────────────────────────────────────────────
-
-const downloadBtnStyle: React.CSSProperties = {
-  padding: '8px 16px',
-  background: '#1a1a1a',
-  color: '#ccc',
-  border: '1px solid #333',
-  borderRadius: '8px',
-  textDecoration: 'none',
-  fontSize: '13px',
-  fontWeight: 600,
-  cursor: 'pointer',
-  transition: 'border-color 0.15s',
-};
-
-function WebMode({ channel, content, offsetSeconds, deepLink, channels, channelIndex, onSelect, onPrev, onNext }: any) {
-  return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-      {/* Channel tabs */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: '#0a0a0a' }}>
       <div style={{ padding: '16px 24px', display: 'flex', gap: '8px', borderBottom: '1px solid #1a1a1a', overflowX: 'auto' }}>
-        {channels.map((ch: any, i: number) => (
-          <button key={ch.id} onClick={() => onSelect(i)} style={{
+        {channels.map((c: any, i: number) => (
+          <button key={c.id} onClick={() => onSelect(i)} style={{
             padding: '6px 14px', borderRadius: '20px', border: 'none', cursor: 'pointer',
             fontWeight: 600, fontSize: '13px', whiteSpace: 'nowrap',
-            background: i === channelIndex ? ch.color : '#1a1a1a',
+            background: i === channelIndex ? c.color : '#1a1a1a',
             color: i === channelIndex ? '#fff' : '#666',
-          }}>
-            {ch.name}
-          </button>
+          }}>{c.name}</button>
         ))}
       </div>
-
-      {/* Now playing */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 24px', gap: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', animation: 'pulse 2s infinite' }} />
-          <span style={{ color: '#ef4444', fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em' }}>LIVE · CH {channelIndex + 1}</span>
-        </div>
-
-        <div style={{ textAlign: 'center', maxWidth: '480px' }}>
-          <div style={{ fontSize: '12px', color: channel.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '10px' }}>{channel.name}</div>
-          <h1 style={{ fontSize: '32px', fontWeight: 700, margin: '0 0 10px', lineHeight: 1.2 }}>{content.title}</h1>
-          <p style={{ color: '#888', fontSize: '15px', margin: '0 0 6px' }}>{content.description}</p>
-          <p style={{ color: '#444', fontSize: '13px', margin: '0 0 24px' }}>{content.year} · {formatOffset(offsetSeconds)}</p>
-
-          <div style={{ width: '100%', height: '3px', background: '#1a1a1a', borderRadius: '2px', marginBottom: '28px' }}>
-            <div style={{ height: '100%', width: `${Math.min(100, (offsetSeconds / (content.durationMins * 60)) * 100)}%`, background: channel.color, borderRadius: '2px' }} />
-          </div>
-
-          <a href={deepLink} target="_blank" rel="noopener noreferrer" style={{
-            display: 'inline-block', padding: '14px 32px', background: channel.color,
-            color: '#fff', borderRadius: '8px', textDecoration: 'none', fontWeight: 700, fontSize: '15px',
-          }}>
-            Open in {channel.service === 'netflix' ? 'Netflix' : 'HBO Max'} →
-          </a>
-
-          <div style={{ marginTop: '24px', padding: '20px', background: '#111', borderRadius: '12px', border: '1px solid #1a1a1a' }}>
-            <p style={{ color: '#888', fontSize: '13px', margin: '0 0 14px' }}>
-              Download the desktop app for the full inline experience
-            </p>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <a
-                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable-TV-0.1.0.dmg"
-                style={downloadBtnStyle}
-              >
-                ⬇ macOS (Intel)
-              </a>
-              <a
-                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable-TV-0.1.0-arm64.dmg"
-                style={downloadBtnStyle}
-              >
-                ⬇ macOS (Apple Silicon)
-              </a>
-              <a
-                href="https://github.com/jonybur-oc/cabletv/releases/latest/download/Cable-TV-0.1.0.exe"
-                style={downloadBtnStyle}
-              >
-                ⬇ Windows
-              </a>
-            </div>
-            <p style={{ color: '#333', fontSize: '11px', margin: '12px 0 0', textAlign: 'center' }}>
-              Auto-updates automatically when new versions are released
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: '24px', color: '#333', fontSize: '13px' }}>
-          <button onClick={onPrev} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '20px' }}>←</button>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '40px' }}>
+        <div style={{ fontSize: '11px', color: ch.color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>CH {channelIndex + 1} · {ch.name}</div>
+        <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0, textAlign: 'center' }}>{ch.genre} is on.</h1>
+        <p style={{ color: '#666', fontSize: '14px', margin: 0, textAlign: 'center' }}>
+          Download the desktop app to watch inline.<br />Or open {ch.service === 'netflix' ? 'Netflix' : 'HBO Max'} directly.
+        </p>
+        <a href={channelUrls[ch.id]} target="_blank" rel="noopener noreferrer" style={{
+          padding: '12px 28px', background: ch.color, color: '#fff',
+          borderRadius: '8px', textDecoration: 'none', fontWeight: 700,
+        }}>
+          Open {ch.service === 'netflix' ? 'Netflix' : 'HBO Max'} →
+        </a>
+        <div style={{ display: 'flex', gap: '24px', color: '#333', fontSize: '13px', marginTop: '8px' }}>
+          <button onClick={onPrev} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '18px' }}>←</button>
           <span>arrow keys to flip</span>
-          <button onClick={onNext} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '20px' }}>→</button>
+          <button onClick={onNext} style={{ background: 'none', border: 'none', color: '#444', cursor: 'pointer', fontSize: '18px' }}>→</button>
         </div>
-      </div>
-
-      {/* Bottom guide */}
-      <div style={{ padding: '16px 24px', borderTop: '1px solid #1a1a1a', display: 'flex', gap: '16px', overflowX: 'auto' }}>
-        {channels.map((ch: any, i: number) => {
-          const np = getNowPlaying(ch);
-          return (
-            <button key={ch.id} onClick={() => onSelect(i)} style={{
-              background: 'none', border: `1px solid ${i === channelIndex ? ch.color : '#1a1a1a'}`,
-              borderRadius: '8px', padding: '10px 14px', cursor: 'pointer', textAlign: 'left',
-              minWidth: '160px', color: '#fff',
-            }}>
-              <div style={{ fontSize: '10px', color: ch.color, fontWeight: 700, marginBottom: '3px', textTransform: 'uppercase' }}>{ch.name}</div>
-              <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '2px' }}>{np.content.title}</div>
-              <div style={{ fontSize: '11px', color: '#555' }}>{formatOffset(np.offsetSeconds)}</div>
-            </button>
-          );
-        })}
       </div>
     </div>
   );
